@@ -15,8 +15,10 @@
 # // plFound pivot lows: number of bars with higher lows  
 # Pivot Point Highs are calculated by the number of bars with lower highs on either side of a Pivot Point High calculation.
 # plFound = na(pivotlow(osc, lbL, lbR)) ? false : true
-import numpy
+import numpy as np
 import ta
+import pandas as pd
+import yfinance as yf
 
 class Strategy:
 	'''
@@ -45,7 +47,7 @@ class Strategy:
 		c = lows[lows > v]
 		return c.index
 
-	def pivotHigh(self):
+	def pivotHigh(self, positionId, pivotLookBackLeft=3, pivotLookBackRight=1):
 		'''
 		Pivot Point Highs are calculated by the number of bars 
 		with lower highs on either side of a Pivot Point High calculation. 
@@ -113,7 +115,7 @@ class Strategy:
 			# priceLL = low[lbR] < valuewhen(plFound, low[lbR], 1)
 
 			# bullCond = plotBull and priceLL and oscHL and plFound
-			plows = self.pivotLow(pivotLookBackLeft, pivotLookBackRight)
+			plows = self.pivotLow(lookId, pivotLookBackLeft, pivotLookBackRight)
 
 			if len(plows) > 0:
 
@@ -133,20 +135,180 @@ class Strategy:
 		# bull hidden
 
 
+class RSI:
+	'''
+	init with ohlc data of pandas dataframe : 
+	best to subset data to only required candles;
+
+	output: ;
+	'''
+	def __init__(self, ohlc):
+		self.ohlc = ohlc
+
+		# ohlc format matches
+		c = set(ohlc.columns.values)
+		columnNames = {'timestamps', 'open', 'high', 'low', 'close'}
+		assert (len(c.intersection(columnNames)) ==5), "pass ohlc parameter as pandas Dataframe of columns ['timestamps', 'open', 'high', 'low', 'close']"
+		self.ohlc.sort_values('timestamps', inplace=True, ignore_index=True)
+
+	def getHighs(self, data: np.array, pivotLookBackLeft=1, pivotLookBackRight=2):
+		'''
+		Finds highs in an array that satisfies left and right range condition.
+
+		return: list of index.
+		'''
+		n = len(data)
+		high = []
+		for idx in range(pivotLookBackLeft, n - pivotLookBackRight):
+			if data[idx] > np.max(data[idx - pivotLookBackLeft:idx]) and data[idx] > np.max(data[idx + 1:idx + pivotLookBackRight + 1]):
+				high.append(idx)
+		return high
+
+	def getLows(self, data: np.array, pivotLookBackLeft=1, pivotLookBackRight=2):
+		'''
+		Finds lows in an array that satisfies left and right range condition.
+
+		return: list of index.
+		'''
+		n = len(data)
+		low = []
+		for idx in range(pivotLookBackLeft, n-pivotLookBackRight):
+			if data[idx] < np.min(data[idx - pivotLookBackLeft:idx]) and data[idx] < np.min(data[idx + 1:idx + pivotLookBackRight + 1]):
+				low.append(idx)
+		return low
+
+	def getHigher(self, high_idx, highs, rangeMin=5, rangeMax=60):
+		'''
+		Finds Higher in an array of highs or lows.
+		
+		return: list of index.
+		'''
+		higher = []
+		for i, idx in enumerate(high_idx):
+			if i == 0:
+				continue
+			if highs[idx] > highs[high_idx[i - 1]] and rangeMin <= (idx - high_idx[i - 1]) <= rangeMax:
+				higher.append(idx)
+		return higher
+
+	def getLower(self, low_idx, lows, rangeMin=5, rangeMax=60):
+		'''
+		Finds Higher in an array of highs or lows.
+		
+		return: list of index.
+		'''
+		lower = []
+		for i, idx in enumerate(low_idx):
+			if i == 0:
+				continue
+			if lows[idx] < lows[low_idx[i - 1]] and rangeMin <= (idx - low_idx[i - 1]) <= rangeMax:
+				lower.append(idx)
+		return lower
+
+	def getHigherHighs(self, data: np.array, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
+		'''
+		Finds consecutive higher highs in an array.
+
+		return: list of index.
+		'''
+		# Get highs
+		high_idx = self.getHighs(data, 
+							pivotLookBackLeft=pivotLookBackLeft, 
+							pivotLookBackRight=pivotLookBackRight)
+		highs = data[high_idx]
+		return self.getHigher(high_idx, highs, rangeMin, rangeMax)
+
+	def getHigherLows(self, data: np.array, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
+		'''
+		Finds consecutive higher lows in an array.
+
+		return: list of index.
+		'''
+		low_idx = self.getLows(data, 
+							pivotLookBackLeft=pivotLookBackLeft, 
+							pivotLookBackRight=pivotLookBackRight)
+		lows = data[low_idx]
+		return self.getHigher(low_idx, lows, rangeMin, rangeMax)
+
+	def getLowerLows(self, data: np.array, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
+		'''
+		Finds consecutive lower lows in an array.
+
+		return: list of index.
+		'''
+		low_idx = self.getLows(data, 
+							pivotLookBackLeft=pivotLookBackLeft, 
+							pivotLookBackRight=pivotLookBackRight)
+		lows = data[low_idx]
+		return self.getLower(low_idx, lows, rangeMin, rangeMax)
+
+	def getLowerHighs(self, data: np.array, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
+		'''
+		Finds consecutive lower highs in an array.
+
+		return: list of index.
+		'''
+		high_idx = self.getHighs(data, 
+							pivotLookBackLeft=pivotLookBackLeft, 
+							pivotLookBackRight=pivotLookBackRight)
+		highs = data[high_idx]
+		return self.getLower(high_idx, highs, rangeMin, rangeMax)
+
+	def getBullRegular(self, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
+		oscHL = self.getHigherLows(self.ohlc.osc, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
+		priceLL = self.getLowerLows(self.ohlc.low, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
+
+		bull = list(set(priceLL) & set(oscHL))
+		
+		if not bull:
+			return
+		bull = [i + pivotLookBackRight + 1 for i in bull]
+		return data[data.index.isin(bull)]
+
+	def getBullHidden(self, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
+		oscLL = self.getLowerLows(self.ohlc.osc, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
+		priceHL = self.getHigherLows(self.ohlc.low, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
+
+		bullHidden = list(set(priceHL) & set(oscLL))
+		if not bullHidden:
+			return
+		bullHidden = [i + pivotLookBackRight + 1 for i in bullHidden]
+		return data[data.index.isin(bullHidden)]
+
+	def getBearRegular(self, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
+		oscLH = self.getLowerHighs(self.ohlc.osc, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
+		priceHH = self.getHigherHighs(self.ohlc.high, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
+		
+		bear = list(set(priceHH) & set(oscLH))
+		if not bear:
+			return 
+		bear = [i + pivotLookBackRight + 1 for i in bear]
+		return data[data.index.isin(bear)]
+
+	def getSellRSI(self):
+		return self.ohlc[self.ohlc.osc >= 80]
+	
+	def getSignals(self, period=18, stopLoss=0.1, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
+		osc = ta.momentum.RSIIndicator(self.ohlc.close, period).rsi()
+		self.ohlc['osc'] = osc
+
+		bull = self.getBullRegular(pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
+		bullHidden = self.getBullHidden(pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
+		bear = self.getBearRegular(pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
+		sellRSI = self.getSellRSI()
+		return bull, bullHidden, bear, sellRSI
+
+
 
 if __name__ == '__main__':
-	import numpy as np
-	import pandas as pd
-	import yfinance as yf
-
 	# prepare data
-	start = '2021-10-01'
-	end = '2021-12-26'
-	ticker = 'NVDA'
+	start = "2021-8-01"
+	end = "2021-12-26"
+	ticker = 'TQQQ'
 	yfObj = yf.Ticker(ticker)
-	data = yfObj.history(start=start, end=end).reset_index()
+	data = yfObj.history(start=start, end=end, interval='1h').reset_index()
 	data.columns = [i.lower() for i in data.columns.values]
-	data.rename({'date': 'timestamps'}, axis=1, inplace=True)
+	data.rename({'index': 'timestamps'}, axis=1, inplace=True)
 	
-	strat = Strategy(data)
-	print(strat.rsiIndicatorBackTester())
+	strat = RSI(data)
+	print(strat.getSignals())
