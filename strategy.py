@@ -140,7 +140,7 @@ class RSI:
 	init with ohlc data of pandas dataframe : 
 	best to subset data to only required candles;
 
-	output: ;
+	output:
 	'''
 	def __init__(self, ohlc):
 		self.ohlc = ohlc
@@ -150,6 +150,9 @@ class RSI:
 		columnNames = {'timestamps', 'open', 'high', 'low', 'close'}
 		assert (len(c.intersection(columnNames)) ==5), "pass ohlc parameter as pandas Dataframe of columns ['timestamps', 'open', 'high', 'low', 'close']"
 		self.ohlc.sort_values('timestamps', inplace=True, ignore_index=True)
+		
+		self.ohlc['buy'] = 0
+		self.ohlc['sell'] = 0
 
 	def getHighs(self, data: np.array, pivotLookBackLeft=1, pivotLookBackRight=2):
 		'''
@@ -263,7 +266,8 @@ class RSI:
 		if not bull:
 			return
 		bull = [i + pivotLookBackRight + 1 for i in bull]
-		return data[data.index.isin(bull)]
+		self.ohlc.loc[bull, 'buy'] = 1
+		return self.ohlc[self.ohlc.index.isin(bull)]
 
 	def getBullHidden(self, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
 		oscLL = self.getLowerLows(self.ohlc.osc, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
@@ -273,7 +277,8 @@ class RSI:
 		if not bullHidden:
 			return
 		bullHidden = [i + pivotLookBackRight + 1 for i in bullHidden]
-		return data[data.index.isin(bullHidden)]
+		self.ohlc.loc[bullHidden, 'buy'] = 1
+		return self.ohlc[self.ohlc.index.isin(bullHidden)]
 
 	def getBearRegular(self, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
 		oscLH = self.getLowerHighs(self.ohlc.osc, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
@@ -283,19 +288,21 @@ class RSI:
 		if not bear:
 			return 
 		bear = [i + pivotLookBackRight + 1 for i in bear]
-		return data[data.index.isin(bear)]
+		self.ohlc.loc[bear, 'sell'] = 1
+		return self.ohlc[self.ohlc.index.isin(bear)]
 
-	def getSellRSI(self):
-		return self.ohlc[self.ohlc.osc >= 80]
+	def getSellRSI(self, RSISell=80):
+		self.ohlc.loc[self.ohlc[self.ohlc.osc >= RSISell].index, 'sell'] = 1
+		return self.ohlc[self.ohlc.osc >= RSISell]
 	
-	def getSignals(self, period=18, stopLoss=0.1, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
+	def getSignals(self, period=18, stopLoss=0.1, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60, RSISell=80):
 		osc = ta.momentum.RSIIndicator(self.ohlc.close, period).rsi()
 		self.ohlc['osc'] = osc
 
 		bull = self.getBullRegular(pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
 		bullHidden = self.getBullHidden(pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
 		bear = self.getBearRegular(pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
-		sellRSI = self.getSellRSI()
+		sellRSI = self.getSellRSI(RSISell)
 		return bull, bullHidden, bear, sellRSI
 
 
