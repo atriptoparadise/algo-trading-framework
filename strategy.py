@@ -19,6 +19,8 @@ import numpy as np
 import ta
 import pandas as pd
 import yfinance as yf
+from datetime import datetime
+
 
 class Strategy:
 	'''
@@ -212,82 +214,100 @@ class RSI:
 		'''
 		Finds consecutive higher highs in an array.
 
-		return: list of index.
+		return: list of index of higher highs and index of highs.
 		'''
 		# Get highs
 		high_idx = self.getHighs(data, 
 							pivotLookBackLeft=pivotLookBackLeft, 
 							pivotLookBackRight=pivotLookBackRight)
 		highs = data[high_idx]
-		return self.getHigher(high_idx, highs, rangeMin, rangeMax)
+		return self.getHigher(high_idx, highs, rangeMin, rangeMax), high_idx
 
 	def getHigherLows(self, data: np.array, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
 		'''
 		Finds consecutive higher lows in an array.
 
-		return: list of index.
+		return: list of index of higher lows and index of lows.
 		'''
 		low_idx = self.getLows(data, 
 							pivotLookBackLeft=pivotLookBackLeft, 
 							pivotLookBackRight=pivotLookBackRight)
 		lows = data[low_idx]
-		return self.getHigher(low_idx, lows, rangeMin, rangeMax)
+		return self.getHigher(low_idx, lows, rangeMin, rangeMax), low_idx
 
 	def getLowerLows(self, data: np.array, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
 		'''
 		Finds consecutive lower lows in an array.
 
-		return: list of index.
+		return: list of index of lower lows and index of lows.
 		'''
 		low_idx = self.getLows(data, 
 							pivotLookBackLeft=pivotLookBackLeft, 
 							pivotLookBackRight=pivotLookBackRight)
 		lows = data[low_idx]
-		return self.getLower(low_idx, lows, rangeMin, rangeMax)
+		return self.getLower(low_idx, lows, rangeMin, rangeMax), low_idx
 
 	def getLowerHighs(self, data: np.array, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
 		'''
 		Finds consecutive lower highs in an array.
 
-		return: list of index.
+		return: list of index of lower highs and index of highs.
 		'''
 		high_idx = self.getHighs(data, 
 							pivotLookBackLeft=pivotLookBackLeft, 
 							pivotLookBackRight=pivotLookBackRight)
 		highs = data[high_idx]
-		return self.getLower(high_idx, highs, rangeMin, rangeMax)
+		return self.getLower(high_idx, highs, rangeMin, rangeMax), high_idx
 
 	def getBullRegular(self, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
-		oscHL = self.getHigherLows(self.ohlc.osc, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
-		priceLL = self.getLowerLows(self.ohlc.low, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
+		oscHL, low_idx = self.getHigherLows(self.ohlc.osc, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
+		
+		priceLL = []
+		price = self.ohlc.low.values
+
+		for i in range(1, len(low_idx)):
+			if price[low_idx[i]] < price[low_idx[i - 1]] and 60 > low_idx[i] - low_idx[i - 1] > 5:
+				priceLL.append(low_idx[i])
 
 		bull = list(set(priceLL) & set(oscHL))
 		
 		if not bull:
 			return
-		bull = [i + pivotLookBackRight + 1 for i in bull]
+		bull = [i + pivotLookBackRight + 1 for i in bull if i + pivotLookBackRight + 1 < self.ohlc.shape[0]]
 		self.ohlc.loc[bull, 'buy'] = 1
 		return self.ohlc[self.ohlc.index.isin(bull)]
 
 	def getBullHidden(self, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
-		oscLL = self.getLowerLows(self.ohlc.osc, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
-		priceHL = self.getHigherLows(self.ohlc.low, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
+		oscLL, low_idx = self.getLowerLows(self.ohlc.osc, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
+		
+		priceHL = []
+		price = self.ohlc.low.values
+
+		for i in range(1, len(low_idx)):
+			if price[low_idx[i]] > price[low_idx[i - 1]] and 60 > low_idx[i] - low_idx[i - 1] > 5:
+				priceHL.append(low_idx[i])
 
 		bullHidden = list(set(priceHL) & set(oscLL))
 		if not bullHidden:
 			return
-		bullHidden = [i + pivotLookBackRight + 1 for i in bullHidden]
+		bullHidden = [i + pivotLookBackRight + 1 for i in bullHidden if i + pivotLookBackRight + 1 < self.ohlc.shape[0]]
 		self.ohlc.loc[bullHidden, 'buy'] = 1
 		return self.ohlc[self.ohlc.index.isin(bullHidden)]
 
 	def getBearRegular(self, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
-		oscLH = self.getLowerHighs(self.ohlc.osc, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
-		priceHH = self.getHigherHighs(self.ohlc.high, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
+		oscLH, high_idx = self.getLowerHighs(self.ohlc.osc, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)	
+		
+		priceHH = []
+		price = self.ohlc.high.values
+
+		for i in range(1, len(high_idx)):
+			if price[high_idx[i]] > price[high_idx[i - 1]] and 60 > high_idx[i] - high_idx[i - 1] > 5:
+				priceHH.append(high_idx[i])
 		
 		bear = list(set(priceHH) & set(oscLH))
 		if not bear:
 			return 
-		bear = [i + pivotLookBackRight + 1 for i in bear]
+		bear = [i + pivotLookBackRight + 1 for i in bear if i + pivotLookBackRight + 1 < self.ohlc.shape[0]]
 		self.ohlc.loc[bear, 'sell'] = 1
 		return self.ohlc[self.ohlc.index.isin(bear)]
 
@@ -309,13 +329,14 @@ class RSI:
 
 if __name__ == '__main__':
 	# prepare data
-	start = "2021-8-01"
-	end = "2021-12-26"
-	ticker = 'TQQQ'
+	start = "2020-1-01"
+	end = "2021-12-28"
+	ticker = 'NVDA'
 	yfObj = yf.Ticker(ticker)
 	data = yfObj.history(start=start, end=end, interval='1h').reset_index()
 	data.columns = [i.lower() for i in data.columns.values]
 	data.rename({'index': 'timestamps'}, axis=1, inplace=True)
 	
 	strat = RSI(data)
-	print(strat.getSignals())
+	bull, bullHidden, bear, sellRSI = strat.getSignals(period=18, stopLoss=0.1, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60, RSISell=80)
+	print(strat.ohlc[strat.ohlc.buy==1])
