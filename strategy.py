@@ -137,12 +137,10 @@ class Strategy:
 		# bull hidden
 
 
-class RSI:
+class RSIDivergence:
 	'''
 	init with ohlc data of pandas dataframe : 
 	best to subset data to only required candles;
-
-	output:
 	'''
 	def __init__(self, ohlc):
 		self.ohlc = ohlc
@@ -260,53 +258,61 @@ class RSI:
 		return self.getLower(high_idx, highs, rangeMin, rangeMax), high_idx
 
 	def getBullRegular(self, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
+		# RSI higher lows pivot
 		oscHL, low_idx = self.getHigherLows(self.ohlc.osc, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
 		
+		# Get price lower lows without pivot
 		priceLL = []
 		price = self.ohlc.low.values
-
 		for i in range(1, len(low_idx)):
 			if price[low_idx[i]] < price[low_idx[i - 1]] and 60 > low_idx[i] - low_idx[i - 1] > 5:
 				priceLL.append(low_idx[i])
 
+		# Bull Regular = price lower low + RSI higher low pivot
 		bull = list(set(priceLL) & set(oscHL))
-		
 		if not bull:
 			return
+		
 		bull = [i + pivotLookBackRight + 1 for i in bull if i + pivotLookBackRight + 1 < self.ohlc.shape[0]]
 		self.ohlc.loc[bull, 'buy'] = 1
 		return self.ohlc[self.ohlc.index.isin(bull)]
 
 	def getBullHidden(self, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
+		# RSI lower lows pivot
 		oscLL, low_idx = self.getLowerLows(self.ohlc.osc, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
 		
+		# Get price higher lows without pivot
 		priceHL = []
 		price = self.ohlc.low.values
-
 		for i in range(1, len(low_idx)):
 			if price[low_idx[i]] > price[low_idx[i - 1]] and 60 > low_idx[i] - low_idx[i - 1] > 5:
 				priceHL.append(low_idx[i])
 
+		# Bull Hidden = price higher low + RSI lower low pivot
 		bullHidden = list(set(priceHL) & set(oscLL))
 		if not bullHidden:
 			return
+
 		bullHidden = [i + pivotLookBackRight + 1 for i in bullHidden if i + pivotLookBackRight + 1 < self.ohlc.shape[0]]
 		self.ohlc.loc[bullHidden, 'buy'] = 1
 		return self.ohlc[self.ohlc.index.isin(bullHidden)]
 
 	def getBearRegular(self, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60):
+		# RSI lower highs pivot
 		oscLH, high_idx = self.getLowerHighs(self.ohlc.osc, pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)	
 		
+		# Get price higher highs without pivot
 		priceHH = []
 		price = self.ohlc.high.values
-
 		for i in range(1, len(high_idx)):
 			if price[high_idx[i]] > price[high_idx[i - 1]] and 60 > high_idx[i] - high_idx[i - 1] > 5:
 				priceHH.append(high_idx[i])
 		
+		# Bear Regular = price higher high + RSI lower high pivot
 		bear = list(set(priceHH) & set(oscLH))
 		if not bear:
-			return 
+			return
+		
 		bear = [i + pivotLookBackRight + 1 for i in bear if i + pivotLookBackRight + 1 < self.ohlc.shape[0]]
 		self.ohlc.loc[bear, 'sell'] = 1
 		return self.ohlc[self.ohlc.index.isin(bear)]
@@ -315,16 +321,21 @@ class RSI:
 		self.ohlc.loc[self.ohlc[self.ohlc.osc >= RSISell].index, 'sell'] = 1
 		return self.ohlc[self.ohlc.osc >= RSISell]
 	
-	def getSignals(self, period=18, stopLoss=0.1, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60, RSISell=80):
+	def getSignals(self, period=18, stopLoss=0.1, pivotLookBackLeft=1, 
+					pivotLookBackRight=2, rangeMin=5, rangeMax=60, RSISell=80,
+					bullSignal=True, bullHiddenSignal=True, bearSignal=True, sellRSISignal=True):
+		
 		osc = ta.momentum.RSIIndicator(self.ohlc.close, period).rsi()
 		self.ohlc['osc'] = osc
 
-		bull = self.getBullRegular(pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
-		bullHidden = self.getBullHidden(pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
-		bear = self.getBearRegular(pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
-		sellRSI = self.getSellRSI(RSISell)
-		return bull, bullHidden, bear, sellRSI
-
+		if bullSignal:
+			bull = self.getBullRegular(pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
+		if bullHiddenSignal:
+			bullHidden = self.getBullHidden(pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
+		if bearSignal:
+			bear = self.getBearRegular(pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
+		if sellRSISignal:
+			sellRSI = self.getSellRSI(RSISell)
 
 
 if __name__ == '__main__':
@@ -336,7 +347,10 @@ if __name__ == '__main__':
 	data = yfObj.history(start=start, end=end, interval='1h').reset_index()
 	data.columns = [i.lower() for i in data.columns.values]
 	data.rename({'index': 'timestamps'}, axis=1, inplace=True)
-	
-	strat = RSI(data)
-	bull, bullHidden, bear, sellRSI = strat.getSignals(period=18, stopLoss=0.1, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60, RSISell=80)
+
+	strat = RSIDivergence(data)
+	strat.getSignals(period=18, stopLoss=0.1, 
+					pivotLookBackLeft=1, pivotLookBackRight=2, 
+					rangeMin=5, rangeMax=60, RSISell=80,
+					bullSignal=True, bullHiddenSignal=True, bearSignal=True, sellRSISignal=True)
 	print(strat.ohlc[strat.ohlc.buy==1])
