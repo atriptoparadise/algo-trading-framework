@@ -28,6 +28,7 @@ class BackTest:
         cur_amount = initial_amount
         cur_qty = 0
         trades = 0
+        buy_sigs, sell_sigs, sl_sigs = [], [], []
         print('')
         print('New Test')
         print('-' * 80)
@@ -41,7 +42,8 @@ class BackTest:
             cur_qty = cur_amount / buy_price 
             print(' ')
             print(f"Buy at ${buy_price} - {self.ohlc.loc[row, 'timestamps']}")
-            
+            buy_sigs.append((row, trades))
+
             # Find sell for each buy
             for i in range(row + 1, rLimit):
                 latest_row = i
@@ -56,6 +58,7 @@ class BackTest:
                     cur_amount = cur_qty * sell_price
                     print(f"Sell at ${sell_price} - {self.ohlc.loc[i, 'timestamps']} - stop loss")
                     print(f"--- Equity: {cur_amount}")
+                    sl_sigs.append((i, trades))
                     trades += 1
                     break
                 
@@ -64,6 +67,7 @@ class BackTest:
                 cur_amount = cur_qty * sell_price
                 print(f"Sell at ${sell_price} - {self.ohlc.loc[i, 'timestamps']}")
                 print(f"--- Equity: {cur_amount}")
+                sell_sigs.append((i, trades))
                 trades += 1
                 break
         
@@ -73,6 +77,7 @@ class BackTest:
         print(f'Buy and Hold return: {round((self.ohlc.close.values[-1] - self.ohlc.open.values[0]) * 100 / self.ohlc.open.values[0], 2)}%')
         print(f'Strategy return: {round((cur_amount - initial_amount)* 100 / initial_amount, 2)}%')
         print(' ')
+        return buy_sigs, sell_sigs, sl_sigs
 
 
 if __name__ == '__main__':
