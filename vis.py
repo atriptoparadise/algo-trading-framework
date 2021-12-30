@@ -4,7 +4,7 @@ import pandas_datareader.data as web
 import plotly.express as px
 import plotly.graph_objects as go
 import yfinance as yf
-from strategy import RSI
+from strategy import RSIDivergence
 from backtest import BackTest
 
 
@@ -66,18 +66,25 @@ def candlestick_plot(stocks, ticker, signals):
 
 if __name__ == '__main__':
   # prepare data
-  start = "2020-1-01"
-  end = "2021-12-28"
-  ticker = 'NVDA'
-  yfObj = yf.Ticker(ticker)
-  data = yfObj.history(start=start, end=end, intervals='1h').reset_index()
-  data.columns = [i.lower() for i in data.columns.values]
-  data.rename({'index': 'timestamps', 'date':'timestamps'}, axis=1, inplace=True)
+  # start = "2020-1-01"
+  # end = "2021-12-28"
+  # ticker = 'NVDA'
+  # yfObj = yf.Ticker(ticker)
+  # data = yfObj.history(start=start, end=end, intervals='1h').reset_index()
+  # data.columns = [i.lower() for i in data.columns.values]
+  # data.rename({'index': 'timestamps', 'date':'timestamps'}, axis=1, inplace=True)
+  # ticker = 'TQQQ'
+  # data = pd.read_csv('TQQQ_10m_2015_2021.csv')
   
-  strat = RSI(data)
-  bull, bullHidden, bear, sellRSI = strat.getSignals(period=18, stopLoss=0.1, pivotLookBackLeft=1, pivotLookBackRight=2, rangeMin=5, rangeMax=60, RSISell=80)
+  ticker = 'TQQQ'
+  data = pd.read_csv('tqqq_10m.csv')
+
+  strat = RSIDivergence(data)
+  strat.getSignals(period=18, stopLoss=0.1, pivotLookBackLeft=1, pivotLookBackRight=2, 
+                    rangeMin=5, rangeMax=60, RSISell=80, 
+                    bullSignal=True, bullHiddenSignal=True, bearSignal=True, sellRSISignal=True,
+                    remove_first_250=True)
   res = strat.ohlc
-  print(strat.ohlc[strat.ohlc.buy==1])
 
   # BackTest
   test = BackTest(res)
