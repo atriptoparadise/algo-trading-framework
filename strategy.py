@@ -196,7 +196,7 @@ class RSIDivergence:
 
 	def getLower(self, low_idx, lows, rangeMin=5, rangeMax=60):
 		'''
-		Finds Higher in an array of highs or lows.
+		Finds Lower in an array of highs or lows.
 		
 		return: list of index.
 		'''
@@ -318,15 +318,20 @@ class RSIDivergence:
 		return self.ohlc[self.ohlc.index.isin(bear)]
 
 	def getSellRSI(self, RSISell=80):
-		self.ohlc.loc[self.ohlc[self.ohlc.osc >= RSISell].index, 'sell'] = 1
+		# When RSI >= threshold, sell at next open
+		rsi_thresh_idx = self.ohlc[self.ohlc.osc >= RSISell].index
+		rsi_thresh_idx = rsi_thresh_idx + 1
+		self.ohlc.loc[rsi_thresh_idx, 'sell'] = 1
 		return self.ohlc[self.ohlc.osc >= RSISell]
 	
 	def getSignals(self, period=18, stopLoss=0.1, pivotLookBackLeft=1, 
 					pivotLookBackRight=2, rangeMin=5, rangeMax=60, RSISell=80,
-					bullSignal=True, bullHiddenSignal=True, bearSignal=True, sellRSISignal=True):
-		
+					bullSignal=True, bullHiddenSignal=True, bearSignal=True, sellRSISignal=True,
+					remove_first_250=True):
 		osc = ta.momentum.RSIIndicator(self.ohlc.close, period).rsi()
 		self.ohlc['osc'] = osc
+		if remove_first_250:
+			self.ohlc = self.ohlc.iloc[250:, :].reset_index().drop(columns='index')
 
 		if bullSignal:
 			bull = self.getBullRegular(pivotLookBackLeft, pivotLookBackRight, rangeMin, rangeMax)
@@ -342,7 +347,7 @@ if __name__ == '__main__':
 	# prepare data
 	start = "2020-1-01"
 	end = "2021-12-28"
-	ticker = 'NVDA'
+	ticker = 'TQQQ'
 	yfObj = yf.Ticker(ticker)
 	data = yfObj.history(start=start, end=end, interval='1h').reset_index()
 	data.columns = [i.lower() for i in data.columns.values]
