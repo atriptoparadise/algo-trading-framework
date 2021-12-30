@@ -34,7 +34,10 @@ class BackTest:
         print('')
         print('New Test')
         print('-' * 80)
-
+        win = 0
+        win_gross = 0
+        lose = 0
+        lose_gross = 0
 
         for row in range(rLimit):
             if buy[row] == 0 or row <= latest_row:
@@ -44,7 +47,7 @@ class BackTest:
             buy_time = self.ohlc.loc[row, 'timestamps']
             cur_qty = cur_amount / buy_price 
             print(' ')
-            print(f"Buy at ${buy_price} - {buy_time}")
+            print(f"Buy  at ${round(buy_price, 2)} - {buy_time}")
             buy_sigs.append((row, trades))
             trades_info.append([trades + 1, 'Entry Long', buy_time, buy_price, '-'])
 
@@ -62,12 +65,14 @@ class BackTest:
                     cur_amount = cur_qty * sell_price
                     sell_time = self.ohlc.loc[i, 'timestamps']
                     profit = round(100 * (sell_price - buy_price) / buy_price, 2)
-                    print(f"Sell at ${sell_price} - {sell_time} - Profit: {profit}% (stop loss)")
+                    print(f"Sell at ${round(sell_price, 2)} - {sell_time} - Profit: {profit}% (stop loss)")
                     print(f"--- Equity: {cur_amount}")
                     sl_sigs.append((i, trades))
                     
                     trades_info.append([trades + 1, 'Exit Long', sell_time, sell_price, profit])
                     trades += 1
+                    lose += 1
+                    lose_gross += (buy_price - sell_price) * cur_qty
                     break
                 
                 # Sell by bear or RSI level crossover 
@@ -75,11 +80,18 @@ class BackTest:
                 cur_amount = cur_qty * sell_price
                 sell_time = self.ohlc.loc[i, 'timestamps']
                 profit = round(100 * (sell_price - buy_price) / buy_price, 2)
-                print(f"Sell at ${sell_price} - {sell_time} - Profit: {profit}%")
+                print(f"Sell at ${round(sell_price, 2)} - {sell_time} - Profit: {profit}%")
                 print(f"--- Equity: {cur_amount}")
                 sell_sigs.append((i, trades))
                 trades_info.append([trades + 1, 'Exit Long', sell_time, sell_price, profit])
                 trades += 1
+
+                if sell_price >= buy_price:
+                    win += 1
+                    win_gross += (sell_price - buy_price) * cur_qty
+                else:
+                    lose += 1
+                    lose_gross += (buy_price - sell_price) * cur_qty
                 break
         
         print(' ')
@@ -87,6 +99,8 @@ class BackTest:
         print(f'Total trades: {trades}')
         print(f'Buy and Hold return: {round((self.ohlc.close.values[-1] - self.ohlc.open.values[0]) * 100 / self.ohlc.open.values[0], 2)}%')
         print(f'Strategy return: {round((cur_amount - initial_amount)* 100 / initial_amount, 2)}%')
+        print(f'Percent Profitbale: {round(win * 100 / (win + lose), 2)}%')
+        print(f'Profit Factor: {round(win_gross / lose_gross, 2)}')
         print(' ')
         trades_df = pd.DataFrame(trades_info, columns=['trade #', 'type', 'timestamps', 'price', 'Profit %'])
         trades_df.to_csv('trades_df.csv', index=False)
@@ -113,7 +127,7 @@ if __name__ == '__main__':
     #                                                     'high': 'max',
     #                                                     'low': 'min',
     #                                                     'close': 'last'})
-    # data = data.reset_index()
+    # data = data.reset_index().dropna()
     # data.rename({'date': 'timestamps'}, axis=1, inplace=True)
 
     ticker = 'TQQQ'
