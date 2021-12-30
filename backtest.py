@@ -3,6 +3,7 @@ import ta
 import pandas as pd
 import yfinance as yf
 from strategy import RSIDivergence
+from datetime import datetime
 
 
 class BackTest:
@@ -29,6 +30,7 @@ class BackTest:
         cur_qty = 0
         trades = 0
         buy_sigs, sell_sigs, sl_sigs = [], [], []
+        trades_info = []
         print('')
         print('New Test')
         print('-' * 80)
@@ -39,10 +41,12 @@ class BackTest:
                 continue
             
             buy_price = self.ohlc.loc[row, 'open']
+            buy_time = self.ohlc.loc[row, 'timestamps']
             cur_qty = cur_amount / buy_price 
             print(' ')
-            print(f"Buy at ${buy_price} - {self.ohlc.loc[row, 'timestamps']}")
+            print(f"Buy at ${buy_price} - {buy_time}")
             buy_sigs.append((row, trades))
+            trades_info.append([trades + 1, 'Entry Long', buy_time, buy_price, '-'])
 
             # Find sell for each buy
             for i in range(row + 1, rLimit):
@@ -56,18 +60,25 @@ class BackTest:
                     # If open with stop loss then sell at open price, otherwise sell at stop loss
                     sell_price = np.min([self.ohlc.loc[i, 'open'], buy_price * (1 - stopLoss)])
                     cur_amount = cur_qty * sell_price
-                    print(f"Sell at ${sell_price} - {self.ohlc.loc[i, 'timestamps']} - stop loss")
+                    sell_time = self.ohlc.loc[i, 'timestamps']
+                    profit = round(100 * (sell_price - buy_price) / buy_price, 2)
+                    print(f"Sell at ${sell_price} - {sell_time} - Profit: {profit}% (stop loss)")
                     print(f"--- Equity: {cur_amount}")
                     sl_sigs.append((i, trades))
+                    
+                    trades_info.append([trades + 1, 'Exit Long', sell_time, sell_price, profit])
                     trades += 1
                     break
                 
                 # Sell by bear or RSI level crossover 
                 sell_price = self.ohlc.loc[i, 'open']
                 cur_amount = cur_qty * sell_price
-                print(f"Sell at ${sell_price} - {self.ohlc.loc[i, 'timestamps']}")
+                sell_time = self.ohlc.loc[i, 'timestamps']
+                profit = round(100 * (sell_price - buy_price) / buy_price, 2)
+                print(f"Sell at ${sell_price} - {sell_time} - Profit: {profit}%")
                 print(f"--- Equity: {cur_amount}")
                 sell_sigs.append((i, trades))
+                trades_info.append([trades + 1, 'Exit Long', sell_time, sell_price, profit])
                 trades += 1
                 break
         
@@ -77,18 +88,20 @@ class BackTest:
         print(f'Buy and Hold return: {round((self.ohlc.close.values[-1] - self.ohlc.open.values[0]) * 100 / self.ohlc.open.values[0], 2)}%')
         print(f'Strategy return: {round((cur_amount - initial_amount)* 100 / initial_amount, 2)}%')
         print(' ')
+        trades_df = pd.DataFrame(trades_info, columns=['trade #', 'type', 'timestamps', 'price', 'Profit %'])
+        trades_df.to_csv('trades_df.csv', index=False)
         return buy_sigs, sell_sigs, sl_sigs
 
 
 if __name__ == '__main__':
-    # prepare data
-    start = "2020-1-3"
-    end = "2021-12-26"
-    ticker = 'VIXY'
-    yfObj = yf.Ticker(ticker)
-    data = yfObj.history(start=start, end=end, interval='1h').reset_index()
-    data.columns = [i.lower() for i in data.columns.values]
-    data.rename({'index': 'timestamps'}, axis=1, inplace=True)
+    # # prepare data
+    # start = "2020-1-3"
+    # end = "2021-12-26"
+    # ticker = 'TQQQ'
+    # yfObj = yf.Ticker(ticker)
+    # data = yfObj.history(start=start, end=end, interval='1h').reset_index()
+    # data.columns = [i.lower() for i in data.columns.values]
+    # data.rename({'index': 'timestamps'}, axis=1, inplace=True)
 
     # df = pd.read_csv('Binance_ETHUSDT_minute (1).csv')
     # df = df.iloc[::-1]
@@ -103,15 +116,18 @@ if __name__ == '__main__':
     # data = data.reset_index()
     # data.rename({'date': 'timestamps'}, axis=1, inplace=True)
 
-
-    # data = pd.read_csv('test_ETH.csv')
+    ticker = 'TQQQ'
+    data = pd.read_csv('tqqq_10m.csv').dropna()
+    data.timestamps = pd.DatetimeIndex(data.timestamps)
+    data = data[data.timestamps >= datetime(2019, 12, 8)]
 
 
     # Get signals from strategy
     strat = RSIDivergence(data)
     strat.getSignals(period=18, stopLoss=0.1, pivotLookBackLeft=1, pivotLookBackRight=2, 
                     rangeMin=5, rangeMax=60, RSISell=80, 
-                    bullSignal=True, bullHiddenSignal=True, bearSignal=True, sellRSISignal=True)
+                    bullSignal=True, bullHiddenSignal=True, bearSignal=True, sellRSISignal=True,
+                    remove_first_250=True)
     res = strat.ohlc
 
     # BackTest
