@@ -6,6 +6,8 @@ from strategy import RSIDivergence
 from datetime import datetime
 
 
+
+
 class BackTest:
     '''
 	Input: dataframe with timestamps, ohlc, buy, and sell.
@@ -20,6 +22,22 @@ class BackTest:
         columnNames = {'timestamps', 'open', 'high', 'low', 'close', 'buy', 'sell'}
         assert (len(c.intersection(columnNames)) ==7), "pass ohlc parameter as pandas Dataframe of columns ['timestamps', 'open', 'high', 'low', 'close', 'buy', 'sell']"
         self.ohlc.sort_values('timestamps', inplace=True, ignore_index=True)
+
+    def find_max_drawdown(self, price):
+        mdd = 0
+        peak = price[0]
+        draw_list = []
+        for x in range(len(price)):
+            if price[x] > peak: 
+                peak = price[x]
+                if x < len(price) - 1:
+                    draw_list = [x]
+            dd = (peak - price[x]) / peak
+            if dd > mdd:
+                # print(dd, mdd, x)
+                mdd = dd
+                draw_list.append(x)
+        return round(100 * mdd, 2)
 
     def backTest(self, stopLoss=0.1, initial_amount=100000, order_percent=100):
         buy = self.ohlc.buy.values
@@ -38,14 +56,26 @@ class BackTest:
         win_gross = 0
         lose = 0
         lose_gross = 0
+        close_each_bar = []
 
         for row in range(rLimit):
-            if buy[row] == 0 or row <= latest_row:
+            if row == 0:
+                close_each_bar.append([self.ohlc.loc[row, 'timestamps'], 
+                                    self.ohlc.loc[row, 'close'],
+                                    cur_amount])
+            if row <= latest_row:
                 continue
             
+            close_each_bar.append([self.ohlc.loc[row, 'timestamps'], 
+                                    self.ohlc.loc[row, 'close'],
+                                    cur_amount])
+
+            if buy[row] == 0:
+                continue
             buy_price = self.ohlc.loc[row, 'open']
             buy_time = self.ohlc.loc[row, 'timestamps']
             cur_qty = cur_amount / buy_price 
+            
             print(' ')
             print(f"Buy  at ${round(buy_price, 2)} - {buy_time}")
             buy_sigs.append((row, trades))
@@ -56,6 +86,9 @@ class BackTest:
                 latest_row = i
                 # Pass when no sell signal and beyond stop loss
                 if sell[i] == 0 and self.ohlc.loc[i, 'low'] > buy_price * (1 - stopLoss):
+                    close_each_bar.append([self.ohlc.loc[i, 'timestamps'], 
+                                            self.ohlc.loc[i, 'close'],
+                                            cur_qty * self.ohlc.loc[i, 'close']])
                     continue
                 
                 # Stop Loss
@@ -73,6 +106,9 @@ class BackTest:
                     trades += 1
                     lose += 1
                     lose_gross += (buy_price - sell_price) * cur_qty
+                    close_each_bar.append([self.ohlc.loc[i, 'timestamps'], 
+                                            self.ohlc.loc[i, 'close'],
+                                            cur_amount])
                     break
                 
                 # Sell by bear or RSI level crossover 
@@ -92,10 +128,16 @@ class BackTest:
                 else:
                     lose += 1
                     lose_gross += (buy_price - sell_price) * cur_qty
+
+                close_each_bar.append([self.ohlc.loc[i, 'timestamps'], 
+                                            self.ohlc.loc[i, 'close'],
+                                            cur_amount])
                 break
         
         print(' ')
         print('-' * 80)
+        print(f"Start from {self.ohlc.loc[0, 'timestamps']} to {self.ohlc.loc[self.ohlc.shape[0] - 1, 'timestamps']}")
+        print(' ')
         print(f'Total trades: {trades}')
         print(f'Buy and Hold return: {round((self.ohlc.close.values[-1] - self.ohlc.open.values[0]) * 100 / self.ohlc.open.values[0], 2)}%')
         print(f'Strategy return: {round((cur_amount - initial_amount)* 100 / initial_amount, 2)}%')
@@ -104,6 +146,23 @@ class BackTest:
         print(' ')
         trades_df = pd.DataFrame(trades_info, columns=['trade #', 'type', 'timestamps', 'price', 'Profit %'])
         trades_df.to_csv('trades_df.csv', index=False)
+
+        trades_trend = pd.DataFrame(close_each_bar, columns=['timestamps', 'close', 'strat_equity'])
+        trades_trend['strat_equity'] = trades_trend['strat_equity'] * trades_trend['close'][0] / trades_trend['strat_equity'][0]
+        trades_trend['close_return'] = trades_trend.close.pct_change(1)
+        trades_trend['strat_equity_return'] = trades_trend.strat_equity.pct_change(1)
+        trades_trend.to_csv('trades_trend.csv', index=False)
+
+        # Only for 10 mins dataset
+        sharpe_ratio_close = trades_trend['close_return'].mean() * ((252 * 8 * 6) ** .5) / trades_trend['close_return'].std() 
+        sharpe_ratio_strat = trades_trend['strat_equity_return'].mean() * ((252 * 8 * 6) ** .5) / trades_trend['strat_equity_return'].std() 
+        print(f'Buy and Hold Sharpe Ratio: {round(sharpe_ratio_close, 3)}')
+        print(f'Strategy Sharpe Ratio: {round(sharpe_ratio_strat, 3)}')
+        print(' ')
+        
+        print(f"Buy and Hold Max Drawdown: {self.find_max_drawdown(trades_trend['close'].values)}%")
+        print(f"Strategy Max Drawdown: {self.find_max_drawdown(trades_trend['strat_equity'].values)}%")
+        print(' ')
         return buy_sigs, sell_sigs, sl_sigs
 
 
